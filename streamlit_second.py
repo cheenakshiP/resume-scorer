@@ -436,6 +436,11 @@ data = [
         "query": "Job Description Java Developer",
         "score": 0.3616274,
     },
+    {
+        "text": "{'resume': 'Cheenakshi",
+        "query": "Job Description Java Developer",
+        "score": 0.7116274,
+    },
 ]
 
 # Create a DataFrame

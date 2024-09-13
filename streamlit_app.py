@@ -1,6 +1,7 @@
 import json
 import os
 from typing import List
+import requests
 
 import networkx as nx
 import nltk
@@ -202,7 +203,7 @@ avs.add_vertical_space(5)
 
 # st.write("You have selected ", output, " printing the resume")
 selected_file = read_json("Data/Processed/Resumes/" + output)
-
+# print(output)
 avs.add_vertical_space(2)
 st.markdown("#### Parsed Resume Data")
 st.caption(
@@ -227,6 +228,10 @@ annotated_text(
 
 avs.add_vertical_space(5)
 st.write("Now let's take a look at the extracted entities from the resume.")
+
+# Export selected_file for use in another script
+def get_selected_file():
+    return output
 
 # Call the function with your data
 create_star_graph(selected_file["keyterms"], "Entities from Resume")
@@ -273,12 +278,12 @@ job_descriptions = get_filenames_from_dir("Data/Processed/JobDescription")
 st.markdown(
     f"##### There are {len(job_descriptions)} job descriptions present. Please select one from the menu below:"
 )
-output = st.selectbox("", job_descriptions)
+output1 = st.selectbox("", job_descriptions)
 
 
 avs.add_vertical_space(5)
 
-selected_jd = read_json("Data/Processed/JobDescription/" + output)
+selected_jd = read_json("Data/Processed/JobDescription/" + output1)
 
 avs.add_vertical_space(2)
 st.markdown("#### Job Description")
@@ -352,6 +357,79 @@ st.markdown(
     f'<span style="color:{score_color};font-size:24px; font-weight:Bold">{similarity_score}</span>',
     unsafe_allow_html=True,
 )
+def get_resume_score():
+    return similarity_score
 
-# Go back to top
 st.markdown("[:arrow_up: Back to Top](#resume-matcher)")
+
+##################################################################################
+# Initialize jd_score_dict in session state if not already initialized
+if "jd_score_dict" not in st.session_state:
+    st.session_state.jd_score_dict = {}
+from collections import Counter
+if "Job Description" in st.session_state.jd_score_dict:
+    st.session_state.jd_score_dict["Job Description"].append(output1)
+    st.session_state.jd_score_dict["Ats score"].append(similarity_score)
+else:
+    st.session_state.jd_score_dict["Job Description"] = [output1]
+    st.session_state.jd_score_dict["Ats score"] = [similarity_score]
+
+def keyword_analysis(r, jd, score, jd_score_dict):
+    """Function to perform keyword analysis between resume and job description"""
+    resume_counter = Counter(r)
+    jd_counter = Counter(jd)
+
+    # Find common and unique keywords
+    common_keywords = set(r) & set(jd)
+    unique_resume_keywords = set(r) - set(jd)
+    unique_jd_keywords = set(jd) - set(r)
+
+    # Keyword frequency analysis
+    matched_keywords_freq = {word: resume_counter[word] for word in common_keywords}
+    unique_resume_keywords_freq = {word: resume_counter[word] for word in unique_resume_keywords}
+    unique_jd_keywords_freq = {word: jd_counter[word] for word in unique_jd_keywords}
+    # Create DataFrames for plotting
+    matched_df = pd.DataFrame(list(matched_keywords_freq.items()), columns=['Keyword', 'Frequency'])
+    unique_resume_df = pd.DataFrame(list(unique_resume_keywords_freq.items()), columns=['Keyword', 'Frequency'])
+    unique_jd_df = pd.DataFrame(list(unique_jd_keywords_freq.items()), columns=['Keyword', 'Frequency'])
+
+    # Visualization
+
+    # Bar chart for matched keywords frequency
+    st.subheader("Frequency of Matched Keywords")
+    fig_matched = px.bar(matched_df, x='Keyword', y='Frequency', title='Matched Keywords Frequency', labels={'Frequency': 'Frequency'}, color='Frequency')
+    st.plotly_chart(fig_matched, use_container_width=True)
+
+    # Skill match graph
+    st.subheader("Skill Match Graph")
+    skill_match_data = {
+        'Skill': list(matched_keywords_freq.keys()) + list(unique_resume_keywords) + list(unique_jd_keywords),
+        'Type': ['Matched'] * len(matched_keywords_freq) + ['Resume Only'] * len(unique_resume_keywords) + ['JD Only'] * len(unique_jd_keywords),
+        'Frequency': list(matched_keywords_freq.values()) + [resume_counter[skill] for skill in unique_resume_keywords] + [jd_counter[skill] for skill in unique_jd_keywords]
+    }
+    skill_match_df = pd.DataFrame(skill_match_data)
+
+    fig_skill_match = px.bar(skill_match_df, x='Skill', y='Frequency', color='Type', title='Skill Match between Resume and Job Description', labels={'Frequency': 'Frequency'})
+    st.plotly_chart(fig_skill_match, use_container_width=True)
+
+    # Bar chart for unique resume keywords frequency
+    st.subheader("Frequency of Unique Resume Keywords")
+    fig_unique_resume = px.bar(unique_resume_df, x='Keyword', y='Frequency', title='Unique Resume Keywords Frequency', labels={'Frequency': 'Frequency'}, color='Frequency')
+    st.plotly_chart(fig_unique_resume, use_container_width=True)
+
+    # Bar chart for unique job description keywords frequency
+    st.subheader("Frequency of Unique Job Description Keywords")
+    fig_unique_jd = px.bar(unique_jd_df, x='Keyword', y='Frequency', title='Unique Job Description Keywords Frequency', labels={'Frequency': 'Frequency'}, color='Frequency')
+    st.plotly_chart(fig_unique_jd, use_container_width=True)
+
+    # Bar chart for JD score dict
+    st.subheader("Job Description Similarity Scores")
+    jd_score_df = pd.DataFrame(st.session_state.jd_score_dict)
+    fig_jd_score = px.bar(jd_score_df, x='Job Description', y='Ats score', title='JD Similarity Scores', labels={'Ats score': 'ATS Score'}, color='Ats score')
+    st.plotly_chart(fig_jd_score, use_container_width=True)
+
+keywords_resume = selected_file["extracted_keywords"]
+keywords_job_description = selected_jd["extracted_keywords"]
+
+keyword_analysis(keywords_resume, keywords_job_description, similarity_score, st.session_state.jd_score_dict)
+
